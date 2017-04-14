@@ -90,6 +90,12 @@ def start_new_thread(target, args):
     logging.debug("Currently active threads: %s",
                   get_active_threads())
 
+def start_new_daemon(target, args):
+    d = threading.Thread(target=target, args=args)
+    d.daemon = True
+    d.start()
+    logging.debug("Currently active threads: %s",
+                  get_active_threads())
 
 def get_active_threads():
     """Return the list of active thread objects"""

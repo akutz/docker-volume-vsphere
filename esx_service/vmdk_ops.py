@@ -1636,7 +1636,9 @@ def main():
 
         kv.init()
         connectLocalSi()
+        start_vm_changelistener()
         handleVmciRequests(port)
+
     except Exception as e:
         logging.exception(e)
 
@@ -1669,7 +1671,6 @@ http://www.apache.org/licenses/LICENSE-2.0.html
 
 Helper module for task operations.
 """
-
 
 def wait_for_tasks(si, tasks):
     """Given the service instance si and tasks, it returns after all the
@@ -1711,6 +1712,101 @@ def wait_for_tasks(si, tasks):
 
 #------------------------
 
+def start_vm_changelistener():
+    """
+    Listen to power state changes of VMs running on current host
+    """
+    si = get_si()
+    pc = si.content.propertyCollector
+    create_vm_powerstate_filter(pc, si.content.rootFolder)
+    # Start a separate thread to listen to changes
+    threadutils.start_new_daemon(target=listen_vm_propertychange,
+                args=(pc, []))
+
+def create_vm_powerstate_filter(pc, from_node):
+    """
+    Create a filter spec to list to VM power state changes
+    """
+    filterSpec = vmodl.query.PropertyCollector.FilterSpec()
+    objSpec = vmodl.query.PropertyCollector.ObjectSpec(obj=from_node,
+                                                       selectSet=vm_folder_traversal())
+    filterSpec.objectSet.append(objSpec)
+    # Add the property specs
+    propSpec = vmodl.query.PropertyCollector.PropertySpec(type=vim.VirtualMachine, all=False)
+    propSpec.pathSet.append('runtime.powerState')
+    filterSpec.propSet.append(propSpec)
+    try:
+        pcFilter = pc.CreateFilter(filterSpec, True)
+        atexit.register(pcFilter.Destroy)
+    except Exception as e:
+        logging.error("Problem creating PropertyCollector %s", str(e))
+
+def listen_vm_propertychange(pc, empty):
+    logging.info("PropertyChangeListener thread started")
+    version = ''
+    while True:
+        result = pc.WaitForUpdates(version)
+
+        # if the wait timed out, wait again
+        if result is None:
+            continue
+
+        try:
+            # process the updates result
+            for filterSet in result.filterSet:
+                for objectSet in filterSet.objectSet:
+                    moref = getattr(objectSet, 'obj', None)
+                    if objectSet.kind == 'modify':
+                        for change in objectSet.changeSet:
+                            if change.name == 'runtime.powerState' and change.val == 'poweredOff':
+                                vm_name = moref.config.name
+                                logging.info("VM poweroff change found for %s", vm_name)
+                                # if the event was powerOff for a VM, set the status of all
+                                # docker volumes attached to the VM to be detached
+                                set_device_detached(moref.config.hardware.device)
+        except Exception as e:
+            logging.error("PropertyChangeListener: error %s", str(e))
+
+        version = result.version
+
+    logging.info("PropertyChangeListener thread exiting")
+
+def vm_folder_traversal():
+    """
+    Build the traversal spec for the property collector to traverse vmFolder
+    """
+
+    TraversalSpec = vmodl.query.PropertyCollector.TraversalSpec
+    SelectionSpec = vmodl.query.PropertyCollector.SelectionSpec
+
+    # Traversal through vmFolder branch
+    dcToVmf = TraversalSpec(name='dcToVmf', type=vim.Datacenter, path='vmFolder', skip=False)
+    dcToVmf.selectSet.append(SelectionSpec(name='visitFolders'))
+
+    # Recurse through the folders
+    visitFolders = TraversalSpec(name='visitFolders', type=vim.Folder,path='childEntity', skip=False)
+    visitFolders.selectSet.extend((SelectionSpec(name='visitFolders'), SelectionSpec(name='dcToVmf'),))
+
+    return SelectionSpec.Array((visitFolders, dcToVmf,))
+
+def set_device_detached(device_list):
+    """
+    For all devices in device_list, if it is a docker volume, set its status to detached in KV
+    """
+
+    if not device_list:
+        return
+
+    try:
+        for dev in device_list:
+            # if it is a docker volume, construct the vmdk_path and set its status as detached
+            if vmdk_utils.check_docker_volume(dev):
+                datastore, disk_path = dev.backing.fileName.rsplit("]", 1)
+                vmdk_path = os.path.join("/vmfs/volumes/", datastore[1:], disk_path.lstrip())
+                logging.info("Setting detach status for %s", vmdk_path)
+                setStatusDetached(vmdk_path)
+    except Exception as e:
+        logging.error("Could not update vmdk status :%s", str(e))
 
 class ValidationError(Exception):
     """ An exception for option validation errors """
