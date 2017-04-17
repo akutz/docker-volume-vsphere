@@ -26,19 +26,21 @@ package vmdk
 
 import (
 	"fmt"
+	"path/filepath"
+	"sync"
+	"time"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/drivers/vmdk/vmdkops"
 	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/utils/fs"
 	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/utils/refcount"
-	"path/filepath"
-	"sync"
-	"time"
 )
 
 const (
 	devWaitTimeout   = 1 * time.Second
 	sleepBeforeMount = 1 * time.Second
+	refCountDelay    = 20 * time.Second
 	watchPath        = "/dev/disk/by-path"
 	version          = "vSphere Volume Driver v0.4"
 )
@@ -77,7 +79,23 @@ func NewVolumeDriver(port int, useMockEsx bool, mountDir string, driverName stri
 		}
 	}
 
-	d.refCounts.Init(d, mountDir, driverName)
+	refCountStatus := d.refCounts.Init(d, mountDir, driverName)
+	// If refcounting wasn't successfull, schedule one again
+	if refCountStatus == false {
+		timer := time.NewTimer(refCountDelay)
+		log.Infof("Refcounting failed. Scheduling again after %s seconds", refCountDelay)
+		go func() {
+			<-timer.C
+			refCountStatus = d.refCounts.Init(d, mountDir, driverName)
+			if refCountStatus {
+				log.Infof("Refcounting reattempt succeded")
+			} else {
+				log.Infof("Refcounting reattempt failed")
+			}
+		}()
+	} else {
+		log.Infof("Refcounting successfully completed.")
+	}
 	log.WithFields(log.Fields{
 		"version":  version,
 		"port":     vmdkops.EsxPort,
