@@ -84,16 +84,16 @@ def get_lock_decorator(reentrant=False):
     return lock_decorator
 
 
-def start_new_thread(target, args):
+def start_new_thread(target, args, daemon=False):
     """Start a new thread"""
-    threading.Thread(target=target, args=args).start()
-    logging.debug("Currently active threads: %s",
-                  get_active_threads())
+    new_thread = threading.Thread(target=target, args=args)
 
-def start_new_daemon(target, args):
-    d = threading.Thread(target=target, args=args)
-    d.daemon = True
-    d.start()
+    if daemon:
+        new_thread.daemon = True
+
+    new_thread.start()
+    logging.debug("Started new thread - %s with target %s and args %s",
+                  new_thread.ident, target, args)
     logging.debug("Currently active threads: %s",
                   get_active_threads())
 
