@@ -548,6 +548,12 @@ class AuthorizationDataManager:
         the vm names for existing records. We try to populate them and keep None for vms
         for which the name couldn't be found. The vmdk_ops admin code which tries to use
         this vm names handles names which are None
+        In 1.2, "default_datastore" field must be set in tenants table, so the upgrade process
+        will try to set the "default_datastore" field if needed
+        In 1.2, for each tenant in tenants table, a privilege to "default_datastore" must be
+        present, the upgrade process will try to create this privilege if needed
+        In 1.2, for "_DEFAULT" tenant, privilege to "_DEFAULT_DS" need to be removed, and privilege
+        to "__VM_DS" and "__ALL_DS" need to be inserted
         """
         try:
             self.conn.create_function('name_from_uuid', 1, vmdk_utils.get_vm_name_by_uuid)
@@ -561,10 +567,46 @@ class AuthorizationDataManager:
                      """
             sql_script = script.format(DB_MAJOR_VER, DB_MINOR_VER)
             self.conn.executescript(sql_script)
+
+            # check if _DEFAULT tenant exist, if not, insert _DEFAULT tenant
+            cur = self.conn.execute("SELECT * FROM tenants WHERE id = ?",
+                                    (auth_data_const.DEFAULT_TENANT_UUID,))
+            result = cur.fetchall()
+            if not result:
+                # insert _DEFAULT tenant, and set "default_datastore" to "__VM_DS"
+                self.conn.execute("INSERT INTO tenants(id, name, description, default_datastore_url) VALUES (?, ?, ?, ?)",
+                                  (auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.DEFAULT_TENANT,
+                                   auth_data_const.DEFAULT_TENANT_DESCR, auth_data_const.VM_DS))
+                logging.debug("handle_upgrade_1_1_to_1_2: Insert _DEFAULT tenant to tenants table")
+
+            # update the tenants table to set "default_datastore" to "__VM_DS" if "default_datastore" is ""
+            self.conn.execute("UPDATE OR IGNORE  tenants set default_datastore_url = ?  where default_datastore_url = ?", (auth_data_const.VM_DS_URL, "" ))
+
+            cur = self.conn.execute("SELECT * FROM tenants")
+            result = cur.fetchall()
+
+            # go through tenants table, insert full access privilege to "default_datastore" for each tenant if not present
+            for r in result:
+                id = r['id']
+                ds_url = r['default_datastore_url']
+                privilege = (id, ds_url, 1, 0, 0)
+                self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
+                             privilege)
+            logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to default_datastore in privileges table")
+
+            # insert full access privilege to "__ALL_DS" for "_DEFAULT" tenant
+            all_ds_privilege = (auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.ALL_DS_URL, 1, 0, 0)
+            self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
+                               all_ds_privilege)
+            logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to __ALL_DS for _DEFAULT tenant in privileges table")
+            # remove access privilege to "DEFAULT_DS"
+            self.conn.execute("DELETE FROM privileges WHERE tenant_id = ? AND datastore_url = ?",
+                              [auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.DEFAULT_DS_URL])
+            logging.debug("handle_upgrade_1_1_to_1_2: Remove privilege to _DEFAULT_DS for _DEFAULT tenant in privileges table")
             self.conn.commit()
             return None
         except sqlite3.Error as e:
-            error_msg = "Error when upgrading auth DB VMs table"
+            error_msg = "Error when upgrading auth DB table"
             logging.error("handle_upgrade_1_1_to_1_2. %s: %s", error_msg, str(e))
             raise DbUpgradeError(self.db_path, error_msg)
 
