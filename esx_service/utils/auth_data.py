@@ -556,6 +556,7 @@ class AuthorizationDataManager:
         to "__VM_DS" and "__ALL_DS" need to be inserted
         """
         try:
+            logging.debug("handle_upgrade_1_1_to_1_2: Start")
             self.conn.create_function('name_from_uuid', 1, vmdk_utils.get_vm_name_by_uuid)
             # Alter vms table to add a new column name vm_name to store vm name
             # update all the existing records with the vm_name.
@@ -568,19 +569,11 @@ class AuthorizationDataManager:
             sql_script = script.format(DB_MAJOR_VER, DB_MINOR_VER)
             self.conn.executescript(sql_script)
 
-            # check if _DEFAULT tenant exist, if not, insert _DEFAULT tenant
-            cur = self.conn.execute("SELECT * FROM tenants WHERE id = ?",
-                                    (auth_data_const.DEFAULT_TENANT_UUID,))
-            result = cur.fetchall()
-            if not result:
-                # insert _DEFAULT tenant, and set "default_datastore" to "__VM_DS"
-                self.conn.execute("INSERT INTO tenants(id, name, description, default_datastore_url) VALUES (?, ?, ?, ?)",
-                                  (auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.DEFAULT_TENANT,
-                                   auth_data_const.DEFAULT_TENANT_DESCR, auth_data_const.VM_DS))
-                logging.debug("handle_upgrade_1_1_to_1_2: Insert _DEFAULT tenant to tenants table")
+            logging.debug("handle_upgrade_1_1_to_1_2: update vms table Done")
 
             # update the tenants table to set "default_datastore" to "__VM_DS" if "default_datastore" is ""
-            self.conn.execute("UPDATE OR IGNORE  tenants set default_datastore_url = ?  where default_datastore_url = ?", (auth_data_const.VM_DS_URL, "" ))
+            self.conn.execute("UPDATE OR IGNORE tenants SET default_datastore_url = ?  where default_datastore_url = ?", (auth_data_const.VM_DS_URL, "" ))
+            logging.debug("handle_upgrade_1_1_to_1_2: update default_datastore in tenants table")
 
             cur = self.conn.execute("SELECT * FROM tenants")
             result = cur.fetchall()
@@ -591,18 +584,26 @@ class AuthorizationDataManager:
                 ds_url = r['default_datastore_url']
                 privilege = (id, ds_url, 1, 0, 0)
                 self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
-                             privilege)
+                                  privilege)
             logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to default_datastore in privileges table")
 
-            # insert full access privilege to "__ALL_DS" for "_DEFAULT" tenant
-            all_ds_privilege = (auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.ALL_DS_URL, 1, 0, 0)
-            self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
-                               all_ds_privilege)
-            logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to __ALL_DS for _DEFAULT tenant in privileges table")
-            # remove access privilege to "DEFAULT_DS"
-            self.conn.execute("DELETE FROM privileges WHERE tenant_id = ? AND datastore_url = ?",
-                              [auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.DEFAULT_DS_URL])
-            logging.debug("handle_upgrade_1_1_to_1_2: Remove privilege to _DEFAULT_DS for _DEFAULT tenant in privileges table")
+            cur = self.conn.execute("SELECT * FROM tenants WHERE id = ?",
+                                    (auth_data_const.DEFAULT_TENANT_UUID,)
+                                   )
+
+            result = cur.fetchall()
+            logging.debug("handle_upgrade_1_1_to_1_2: Check DEFAULT tenant exist")
+            if result:
+                # _DEFAULT tenant exists
+                # insert full access privilege to "__ALL_DS" for "_DEFAULT" tenant
+                all_ds_privilege = (auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.ALL_DS_URL, 1, 0, 0)
+                self.conn.execute("INSERT INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
+                                  all_ds_privilege)
+                logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to __ALL_DS for _DEFAULT tenant in privileges table")
+                # remove access privilege to "DEFAULT_DS"
+                self.conn.execute("DELETE FROM privileges WHERE tenant_id = ? AND datastore_url = ?",
+                                [auth_data_const.DEFAULT_TENANT_UUID, auth_data_const.DEFAULT_DS_URL])
+                logging.debug("handle_upgrade_1_1_to_1_2: Remove privilege to _DEFAULT_DS for _DEFAULT tenant in privileges table")
             self.conn.commit()
             return None
         except sqlite3.Error as e:
