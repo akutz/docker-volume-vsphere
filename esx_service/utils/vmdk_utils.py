@@ -73,11 +73,10 @@ def init_datastoreCache(force=False):
     from local ESX host. force=True will force it to ignore current cache
     and force init
     """
-    global datastores
-
     logging.debug("init_datastoreCache:  %s", datastores)
 
     with lockManager.get_lock("init_datastoreCache"):
+        global datastores
         if datastores and not force:
             return
 

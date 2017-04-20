@@ -79,15 +79,15 @@ func NewVolumeDriver(port int, useMockEsx bool, mountDir string, driverName stri
 		}
 	}
 
-	refCountStatus := d.refCounts.Init(d, mountDir, driverName)
+	err := d.refCounts.Init(d, mountDir, driverName)
 	// If refcounting wasn't successfull, schedule one again
-	if refCountStatus == false {
+	if err != nil {
 		timer := time.NewTimer(refCountDelay)
-		log.Infof("Refcounting failed. Scheduling again after %s seconds", refCountDelay)
+		log.Infof("Refcounting failed: (%v). Scheduling again after %s seconds", err, refCountDelay)
 		go func() {
 			<-timer.C
-			refCountStatus = d.refCounts.Init(d, mountDir, driverName)
-			if refCountStatus {
+			err = d.refCounts.Init(d, mountDir, driverName)
+			if err != nil {
 				log.Infof("Refcounting reattempt succeded")
 			} else {
 				log.Infof("Refcounting reattempt failed")

@@ -153,7 +153,7 @@ func newRefCount() *refCount {
 // Init Refcounts. Discover volume usage refcounts from Docker.
 // This functions does not sync with mount/unmount handlers and should be called
 // and completed BEFORE we start accepting Mount/unmount requests.
-func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string) bool {
+func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string) error {
 	c, err := client.NewClient(DockerUSocket, ApiVersion, nil, defaultHeaders)
 	if err != nil {
 		log.Panicf("Failed to create client for Docker at %s.( %v)",
@@ -172,7 +172,7 @@ func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string)
 		// TODO: Issue #369
 		// Docker is not running, inform ESX to detach docker volumes, if any
 		// d.detachAllVolumes()
-		return false
+		return err
 	}
 	log.Debugf("Docker info: version=%s, root=%s, OS=%s",
 		info.ServerVersion, info.DockerRootDir, info.OperatingSystem)
@@ -181,7 +181,7 @@ func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string)
 	err = r.discoverAndSync(c, d)
 	if err != nil {
 		log.Errorf("Failed to discover mount refcounts(%v)", err)
-		return false
+		return err
 	}
 
 	// RLocks the RefCountsMap
@@ -193,7 +193,7 @@ func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string)
 			name, cnt.count, cnt.mounted, cnt.dev)
 	}
 
-	return true
+	return nil
 }
 
 // Returns ref count for the volume.
