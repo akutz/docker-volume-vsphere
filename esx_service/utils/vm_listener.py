@@ -25,13 +25,18 @@ import vmdk_ops
 
 from pyVmomi import VmomiSupport, vim, vmodl
 
+VM_POWERSTATE = 'runtime.powerState'
+POWERSTATE_POWEROFF = 'poweredOff'
+
 def start_vm_changelistener():
     """
     Listen to power state changes of VMs running on current host
     """
     si = vmdk_ops.get_si()
     pc = si.content.propertyCollector
-    create_vm_powerstate_filter(pc, si.content.rootFolder)
+    err_msg = create_vm_powerstate_filter(pc, si.content.rootFolder)
+    if err_msg:
+        return err_msg
     # Start a separate thread to listen to changes
     threadutils.start_new_thread(target=listen_vm_propertychange,
                                  args=(pc,),
@@ -48,16 +53,19 @@ def create_vm_powerstate_filter(pc, from_node):
     filterSpec.objectSet.append(objSpec)
     # Add the property specs
     propSpec = vmodl.query.PropertyCollector.PropertySpec(type=vim.VirtualMachine, all=False)
-    propSpec.pathSet.append('runtime.powerState')
+    propSpec.pathSet.append(VM_POWERSTATE)
     filterSpec.propSet.append(propSpec)
     try:
         pcFilter = pc.CreateFilter(filterSpec, True)
         atexit.register(pcFilter.Destroy)
+        return None
     except Exception as e:
-        logging.error("Problem creating PropertyCollector %s", str(e))
+        err_msg = "Problem creating PropertyCollector filter: {}".format(str(e))
+        logging.error(err_msg)
+        return err_msg
 
 def listen_vm_propertychange(pc):
-    logging.info("PropertyChangeListener thread started")
+    logging.info("VMChangeListener thread started")
     version = ''
     while True:
         result = pc.WaitForUpdates(version)
@@ -66,23 +74,30 @@ def listen_vm_propertychange(pc):
             # process the updates result
             for filterSet in result.filterSet:
                 for objectSet in filterSet.objectSet:
-                    moref = getattr(objectSet, 'obj', None)
                     if objectSet.kind != 'modify':
                         continue
                     for change in objectSet.changeSet:
                         # if the event was powerOff for a VM, set the status of all
                         # docker volumes attached to the VM to be detached
-                        if change.name != 'runtime.powerState' or change.val != 'poweredOff':
+                        if change.name != VM_POWERSTATE or change.val != POWERSTATE_POWEROFF:
                             continue
+
+                        moref = getattr(objectSet, 'obj', None)
+                        # Do we need to alert the admin? how?
+                        if not moref:
+                            logging.error("Could not retrieve the managed object")
+                            continue
+
                         logging.info("VM poweroff change found for %s", moref.config.name)
 
                         set_device_detached(moref.config.hardware.device)
         except Exception as e:
-            logging.error("PropertyChangeListener: error %s", str(e))
+            # Do we need to alert the admin? how?
+            logging.error("VMChangeListener: error %s", str(e))
 
         version = result.version
 
-    logging.info("PropertyChangeListener thread exiting")
+    logging.info("VMChangeListener thread exiting")
 
 def vm_folder_traversal():
     """
@@ -107,11 +122,8 @@ def set_device_detached(device_list):
     For all devices in device_list, if it is a DVS volume, set its status to detached in KV
     """
 
-    if not device_list:
-        return
-
     for dev in device_list:
-        # if it is a docker volume, construct the vmdk_path and set its status as detached
+        # if it is a dvs managed volume, set its status as detached
         vmdk_path = vmdk_utils.find_dvs_volume(dev)
         if vmdk_path:
             logging.info("Setting detach status for %s", vmdk_path)

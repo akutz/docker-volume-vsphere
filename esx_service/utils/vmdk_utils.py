@@ -333,7 +333,7 @@ def get_vm_config_path(vm_name):
 
 def find_dvs_volume(dev):
     """
-    Return dvs path if the device is a dvs managed volume
+    If the @param dev is a dvs managed volume, return its vmdk path
     """
     # if device is not a virtual disk, skip this device
     if type(dev) != vim.vm.device.VirtualDisk:
@@ -362,9 +362,9 @@ def check_volumes_mounted(vm_list):
         vm = vmdk_ops.findVmByUuid(vm_id)
         if vm:
             for d in vm.config.hardware.device:
-
                 if find_dvs_volume(d):
-                    error_info = generate_error_info(ErrorCode.VM_WITH_MOUNTED_VOLUMES, vm.config.name)
+                    error_info = generate_error_info(ErrorCode.VM_WITH_MOUNTED_VOLUMES,
+                                                     vm.config.name)
                     return error_info
         else:
             error_info = generate_error_info(ErrorCode.VM_NOT_FOUND, vm_id)

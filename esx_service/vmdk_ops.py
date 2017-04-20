@@ -1636,7 +1636,11 @@ def main():
 
         kv.init()
         connectLocalSi()
-        vm_listener.start_vm_changelistener()
+        err_msg = vm_listener.start_vm_changelistener()
+        if err_msg:
+            logging.error("Cannot start VM listener thread." + err_msg)
+            # Start the process inspite of error in creating VM listener
+
         handleVmciRequests(port)
 
     except Exception as e:
