@@ -364,7 +364,7 @@ def check_volumes_mounted(vm_list):
             for d in vm.config.hardware.device:
 
                 if find_dvs_volume(d):
-                    error_info = error_code.generate_error_info(error_code.ErrorCode.VM_WITH_MOUNTED_VOLUMES, vm.config.name)
+                    error_info = generate_error_info(ErrorCode.VM_WITH_MOUNTED_VOLUMES, vm.config.name)
                     return error_info
         else:
             error_info = generate_error_info(ErrorCode.VM_NOT_FOUND, vm_id)
