@@ -468,6 +468,10 @@ def commands():
                             'help': 'Remove only local link or local DB',
                             'action': 'store_true'
                         },
+                        '--unlink': {
+                            'help': 'Remove the local link to shared DB',
+                            'action': 'store_true'
+                        },
                         '--no-backup': {
                             'help': 'Do not create DB backup before removing',
                             'action': 'store_true'
@@ -1301,15 +1305,37 @@ def config_rm(args):
     # This asks for double confirmation, and removes the local link or DB (if any)
     # NEVER deletes the shared database - instead prints help
 
-    if not args.local:
+    if not args.local and not args.unlink:
         return err_out("""
         Shared DB removal is not supported. For removing  local configuration, use --local flag.
-        For removing shared DB,  run 'vmdkops_admin config rm --local' on ESX hosts using this DB,
+        For removing shared DB,  run 'vmdkops_admin config rm --unlink' on ESX hosts using this DB,
         and manually remove the {} file from shared storage.
         """.format(auth_data.CONFIG_DB_NAME))
 
+    # Check the existing config mode
+    with auth_data.AuthorizationDataManager() as auth:
+        try:
+            auth.connect()
+            info = auth.get_info()
+            mode = auth.mode # for usage outside of the 'with'
+        except auth_data.DbAccessError as ex:
+            return err_out(str(ex))
+
     if not args.confirm:
         return err_out("Warning: For extra safety, removal operation requires '--confirm' flag.")
+
+    if mode == auth_data.DBMode.NotConfigured:
+        pass
+    elif mode == auth_data.DBMode.MultiNode:
+        if args.local:
+            return err_out("'rm --local' is not supported when " + DB_REF + "is in MultiNode mode."
+                        "Use 'rm --unlink' to remove the local link to shared DB.")
+    elif mode == auth_data.DBMode.SingleNode:
+        if args.unlink:
+            return err_out("'rm --unlink' is not supported when " + DB_REF + " is in SingleNode mode."
+                        " Use 'rm --local' to remove the local link to shared DB.")
+    else:
+        raise Exception("Fatal: Internal error - unknown mode: {}".format(mode))
 
     link_path = auth_data.AUTH_DB_PATH # local DB or link
     if not os.path.lexists(link_path):
