@@ -92,6 +92,8 @@ const (
 	DockerUSocket           = "unix:///var/run/docker.sock"
 	defaultSleepIntervalSec = 1
 	dockerConnTimeoutSec    = 2
+	refCountDelay           = 20 * time.Second
+	refCountRetryAttempts   = 3
 
 	// consts for finding and parsing linux mount information
 	linuxMountsFile = "/proc/mounts"
@@ -150,10 +152,33 @@ func newRefCount() *refCount {
 	}
 }
 
-// Init Refcounts. Discover volume usage refcounts from Docker.
-// This functions does not sync with mount/unmount handlers and should be called
-// and completed BEFORE we start accepting Mount/unmount requests.
-func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string) error {
+// tries to calculate refCounts for dvs volumes. If failed, triggers a timer
+// based reattempt to schedule scan after a delay
+func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string) {
+	err := r.calculate(d, mountDir, name)
+	// If refcounting wasn't successfull, schedule one again
+	if err != nil {
+		log.Infof("Refcounting failed: (%v). Scheduling again after %s seconds", err, refCountDelay)
+		r.retryCalculate(d, mountDir, name, refCountRetryAttempts-1)
+	}
+}
+
+// create a timer to calculate refcount after a delay. If failed, retry again
+// until retry attempt limit reached
+func (r RefCountsMap) retryCalculate(d drivers.VolumeDriver, mountDir string, name string, attemptLeft int) {
+	timer := time.NewTimer(refCountDelay)
+	go func() {
+		<-timer.C
+		err := r.calculate(d, mountDir, driverName)
+		if err != nil && attemptLeft > 0 {
+			log.Infof("Refcounting failed: (%v). Scheduling again after %s seconds", err, refCountDelay)
+			r.retryCalculate(d, mountDir, name, attemptLeft-1)
+		}
+	}()
+}
+
+// calculate Refcounts. Discover volume usage refcounts from Docker.
+func (r RefCountsMap) calculate(d drivers.VolumeDriver, mountDir string, name string) error {
 	c, err := client.NewClient(DockerUSocket, ApiVersion, nil, defaultHeaders)
 	if err != nil {
 		log.Panicf("Failed to create client for Docker at %s.( %v)",
@@ -169,9 +194,6 @@ func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string)
 	info, err := c.Info(ctx)
 	if err != nil {
 		log.Infof("Can't connect to %s due to (%v), skipping discovery", DockerUSocket, err)
-		// TODO: Issue #369
-		// Docker is not running, inform ESX to detach docker volumes, if any
-		// d.detachAllVolumes()
 		return err
 	}
 	log.Debugf("Docker info: version=%s, root=%s, OS=%s",
@@ -193,6 +215,7 @@ func (r RefCountsMap) Init(d drivers.VolumeDriver, mountDir string, name string)
 			name, cnt.count, cnt.mounted, cnt.dev)
 	}
 
+	log.Infof("Refcounting successfully completed")
 	return nil
 }
 

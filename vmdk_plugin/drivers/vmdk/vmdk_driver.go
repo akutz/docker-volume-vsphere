@@ -40,7 +40,6 @@ import (
 const (
 	devWaitTimeout   = 1 * time.Second
 	sleepBeforeMount = 1 * time.Second
-	refCountDelay    = 20 * time.Second
 	watchPath        = "/dev/disk/by-path"
 	version          = "vSphere Volume Driver v0.4"
 )
@@ -79,23 +78,8 @@ func NewVolumeDriver(port int, useMockEsx bool, mountDir string, driverName stri
 		}
 	}
 
-	err := d.refCounts.Init(d, mountDir, driverName)
-	// If refcounting wasn't successfull, schedule one again
-	if err != nil {
-		timer := time.NewTimer(refCountDelay)
-		log.Infof("Refcounting failed: (%v). Scheduling again after %s seconds", err, refCountDelay)
-		go func() {
-			<-timer.C
-			err = d.refCounts.Init(d, mountDir, driverName)
-			if err != nil {
-				log.Infof("Refcounting reattempt succeded")
-			} else {
-				log.Infof("Refcounting reattempt failed")
-			}
-		}()
-	} else {
-		log.Infof("Refcounting successfully completed.")
-	}
+	d.refCounts.Init(d, mountDir, driverName)
+
 	log.WithFields(log.Fields{
 		"version":  version,
 		"port":     vmdkops.EsxPort,
