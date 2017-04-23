@@ -572,19 +572,23 @@ class AuthorizationDataManager:
             logging.debug("handle_upgrade_1_1_to_1_2: update vms table Done")
 
             # update the tenants table to set "default_datastore" to "__VM_DS" if "default_datastore" is ""
-            self.conn.execute("UPDATE OR IGNORE tenants SET default_datastore_url = ?  where default_datastore_url = ?", (auth_data_const.VM_DS_URL, "" ))
+            self.conn.execute("UPDATE OR IGNORE tenants SET default_datastore_url = ?  where default_datastore_url = \"\"",
+                              (auth_data_const.VM_DS_URL,))
             logging.debug("handle_upgrade_1_1_to_1_2: update default_datastore in tenants table")
 
             cur = self.conn.execute("SELECT * FROM tenants")
             result = cur.fetchall()
 
             # go through tenants table, insert full access privilege to "default_datastore" for each tenant if not present
-            for r in result:
-                id = r['id']
-                ds_url = r['default_datastore_url']
-                privilege = (id, ds_url, 1, 0, 0)
-                self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
-                                  privilege)
+            # for r in result:
+            #     id = r['id']
+            #     ds_url = r['default_datastore_url']
+            #     privilege = (id, ds_url, 1, 0, 0)
+            #     self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
+            #                       privilege)
+
+            self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota)"
+                                 "SELECT tenant.id, tenant.default_datastore_url, 1, 0, 0 FROM tenants")
             logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to default_datastore in privileges table")
 
             cur = self.conn.execute("SELECT * FROM tenants WHERE id = ?",
@@ -607,8 +611,8 @@ class AuthorizationDataManager:
             self.conn.commit()
             return None
         except sqlite3.Error as e:
-            error_msg = "Error when upgrading auth DB table"
-            logging.error("handle_upgrade_1_1_to_1_2. %s: %s", error_msg, str(e))
+            error_msg = "Error when upgrading auth DB table({})".format(str(e))
+            logging.error("handle_upgrade_1_1_to_1_2. %s", error_msg)
             raise DbUpgradeError(self.db_path, error_msg)
 
     def __handle_upgrade(self):
