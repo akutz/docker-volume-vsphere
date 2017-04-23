@@ -579,16 +579,8 @@ class AuthorizationDataManager:
             cur = self.conn.execute("SELECT * FROM tenants")
             result = cur.fetchall()
 
-            # go through tenants table, insert full access privilege to "default_datastore" for each tenant if not present
-            # for r in result:
-            #     id = r['id']
-            #     ds_url = r['default_datastore_url']
-            #     privilege = (id, ds_url, 1, 0, 0)
-            #     self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota) VALUES (?, ?, ?, ?, ?)",
-            #                       privilege)
-
             self.conn.execute("INSERT OR IGNORE INTO privileges(tenant_id, datastore_url, allow_create, max_volume_size, usage_quota)"
-                                 "SELECT tenant.id, tenant.default_datastore_url, 1, 0, 0 FROM tenants")
+                                 "SELECT tenants.id, tenants.default_datastore_url, 1, 0, 0 FROM tenants")
             logging.debug("handle_upgrade_1_1_to_1_2: Insert privilege to default_datastore in privileges table")
 
             cur = self.conn.execute("SELECT * FROM tenants WHERE id = ?",
