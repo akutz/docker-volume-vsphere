@@ -983,7 +983,7 @@ def tenant_ls(args):
     header = tenant_ls_headers()
     error_info, rows = generate_tenant_ls_rows(tenant_list)
     if error_info:
-        print error_info.msg
+        print(error_info.msg)
     else:
         print(cli_table.create(header, rows))
 
