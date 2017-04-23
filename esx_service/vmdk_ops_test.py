@@ -747,9 +747,8 @@ class VmdkTenantTestCase(unittest.TestCase):
         if not auth_api.privilege_exist(existing_privileges, auth_data_const.ALL_DS_URL):
             error_info = auth_api._tenant_access_add(name=auth_data_const.DEFAULT_TENANT,
                                                     datastore=auth_data_const.ALL_DS,
-                                                    allow_create=True,
-                                                    volume_maxsize_in_MB=0,
-                                                    volume_totalsize_in_MB=0)
+                                                    allow_create=True)
+
             if error_info:
                 logging.warning(error_info.msg)
             self.assertEqual(error_info, None)
@@ -758,9 +757,8 @@ class VmdkTenantTestCase(unittest.TestCase):
         if not auth_api.privilege_exist(existing_privileges, auth_data_const.VM_DS_URL):
             error_info = auth_api._tenant_access_add(name=auth_data_const.DEFAULT_TENANT,
                                                     datastore=auth_data_const.VM_DS,
-                                                    allow_create=True,
-                                                    volume_maxsize_in_MB=0,
-                                                    volume_totalsize_in_MB=0)
+                                                    allow_create=True)
+
             if error_info:
                 logging.warning(error_info.msg)
             self.assertEqual(error_info, None)
@@ -1530,9 +1528,8 @@ class VmdkTenantPolicyUsageTestCase(unittest.TestCase):
         if not auth_api.privilege_exist(existing_privileges, auth_data_const.ALL_DS_URL):
             error_info = auth_api._tenant_access_add(name=auth_data_const.DEFAULT_TENANT,
                                                     datastore=auth_data_const.ALL_DS,
-                                                    allow_create=True,
-                                                    volume_maxsize_in_MB=0,
-                                                    volume_totalsize_in_MB=0)
+                                                    allow_create=True)
+
             if error_info:
                 logging.warning(error_info.msg)
             self.assertEqual(error_info, None)
@@ -1541,9 +1538,8 @@ class VmdkTenantPolicyUsageTestCase(unittest.TestCase):
         if not auth_api.privilege_exist(existing_privileges, auth_data_const.VM_DS_URL):
             error_info = auth_api._tenant_access_add(name=auth_data_const.DEFAULT_TENANT,
                                                     datastore=auth_data_const.VM_DS,
-                                                    allow_create=True,
-                                                    volume_maxsize_in_MB=0,
-                                                    volume_totalsize_in_MB=0)
+                                                    allow_create=True)
+
             if error_info:
                 logging.warning(error_info.msg)
             self.assertEqual(error_info, None)

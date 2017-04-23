@@ -1136,7 +1136,7 @@ def tenant_access_ls(args):
     header = tenant_access_ls_headers()
     error_info, rows = generate_tenant_access_ls_rows(privileges, name)
     if error_info:
-        print error_info.msg
+        print(error_info.msg)
     else:
         print(cli_table.create(header, rows))
 
