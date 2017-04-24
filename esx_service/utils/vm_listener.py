@@ -12,11 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+'''
+VM change listener (started as a part of vmdkops service).
+It monitors VM poweroff events and detaches the DVS managed
+volumes from the VM and updates the status in KV
+'''
+
 import logging
 import os
 import os.path
 import atexit
-
 
 import threadutils
 import log_config
@@ -27,6 +33,7 @@ from pyVmomi import VmomiSupport, vim, vmodl
 
 VM_POWERSTATE = 'runtime.powerState'
 POWERSTATE_POWEROFF = 'poweredOff'
+
 
 def start_vm_changelistener():
     """
@@ -41,6 +48,7 @@ def start_vm_changelistener():
     threadutils.start_new_thread(target=listen_vm_propertychange,
                                  args=(pc,),
                                  daemon=True)
+
 
 def create_vm_powerstate_filter(pc, from_node):
     """
@@ -64,12 +72,16 @@ def create_vm_powerstate_filter(pc, from_node):
         logging.error(err_msg)
         return err_msg
 
+
 def listen_vm_propertychange(pc):
+    """
+    Waits for updates on powerstate of VMs. If powerstate is poweroff,
+    detach the dvs managed volumes attached to VM
+    """
     logging.info("VMChangeListener thread started")
     version = ''
     while True:
         result = pc.WaitForUpdates(version)
-
         try:
             # process the updates result
             for filterSet in result.filterSet:
@@ -90,7 +102,7 @@ def listen_vm_propertychange(pc):
 
                         logging.info("VM poweroff change found for %s", moref.config.name)
 
-                        set_device_detached(moref.config.hardware.device)
+                        set_device_detached(moref)
         except Exception as e:
             # Do we need to alert the admin? how?
             logging.error("VMChangeListener: error %s", str(e))
@@ -98,6 +110,7 @@ def listen_vm_propertychange(pc):
         version = result.version
 
     logging.info("VMChangeListener thread exiting")
+
 
 def vm_folder_traversal():
     """
@@ -117,14 +130,19 @@ def vm_folder_traversal():
 
     return SelectionSpec.Array((visitFolders, dcToVmf,))
 
-def set_device_detached(device_list):
+
+def set_device_detached(vm_moref):
     """
     For all devices in device_list, if it is a DVS volume, set its status to detached in KV
     """
 
-    for dev in device_list:
+    for dev in vm_moref.config.hardware.device:
         # if it is a dvs managed volume, set its status as detached
         vmdk_path = vmdk_utils.find_dvs_volume(dev)
         if vmdk_path:
             logging.info("Setting detach status for %s", vmdk_path)
-            vmdk_ops.setStatusDetached(vmdk_path)
+            # disk detach and update the status in KV
+            err_msg = vmdk_ops.disk_detach_int(vmdk_path, vm_moref, dev)
+            if err_msg:
+                logging.error("Could not detach %s for %s: %s", vmdk_path,
+                              vm_moref.config.name, err_msg)

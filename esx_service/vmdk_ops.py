@@ -1638,7 +1638,8 @@ def main():
         connectLocalSi()
         err_msg = vm_listener.start_vm_changelistener()
         if err_msg:
-            logging.error("Cannot start VM listener thread." + err_msg)
+            logging.warn("Cannot start VM listener: %s", err_msg)
+            logging.warn("Powering off a VM may cause Docker Volumes vmdks staying attached")
             # Start the process inspite of error in creating VM listener
 
         handleVmciRequests(port)
