@@ -1333,7 +1333,7 @@ def config_rm(args):
     elif mode == auth_data.DBMode.SingleNode:
         if args.unlink:
             return err_out("'rm --unlink' is not supported when " + DB_REF + " is in SingleNode mode."
-                        " Use 'rm --local' to remove the local link to shared DB.")
+                        " Use 'rm --local' to remove the local link or local DB.")
     else:
         raise Exception("Fatal: Internal error - unknown mode: {}".format(mode))
 
